@@ -1,0 +1,122 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ч.12 — несостоявшиеся (0 заявок)</title>
+<style>
+ :root{--bg:#0f1420;--card:#1a2233;--line:#2a3550;--txt:#e6ecf7;--mut:#8a98b5;--acc:#4f9cff;--good:#36d399;--bad:#ff6b6b}
+ *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 -apple-system,Segoe UI,Roboto,sans-serif}
+ .wrap{max-width:1240px;margin:0 auto;padding:22px 18px 60px}
+ .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+ h1{font-size:21px;margin:0 0 2px} .sub{color:var(--mut);font-size:13px;margin-bottom:16px}
+ button{background:var(--acc);color:#04183a;border:0;padding:10px 18px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer}
+ button:disabled{opacity:.6;cursor:default}
+ .bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+ input,select{background:var(--card);border:1px solid var(--line);color:var(--txt);padding:9px 12px;border-radius:9px;font-size:14px;outline:none}
+ input:focus,select:focus{border-color:var(--acc)} input.search{flex:1;min-width:200px} .bar label{color:var(--mut);font-size:13px}
+ table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+ th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;user-select:none}
+ th.sortable:hover{color:var(--txt)} tr:hover td{background:#161d2c}
+ .price{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
+ .cat{display:inline-block;margin-top:4px;background:#223;border:1px solid var(--line);color:var(--mut);padding:2px 9px;border-radius:20px;font-size:12px;white-space:nowrap}
+ .badge{display:inline-block;background:var(--good);color:#04210f;font-weight:700;padding:1px 8px;border-radius:20px;font-size:12px;margin-bottom:4px}
+ .subj{font-weight:600} .cust{color:var(--mut);font-size:13px}
+ a.go{color:var(--acc);text-decoration:none;white-space:nowrap;font-size:13px} a.go:hover{text-decoration:underline}
+ .empty{color:var(--mut);padding:40px;text-align:center}
+ footer{margin-top:34px;color:var(--mut);font-size:12.5px;text-align:center} footer a{color:var(--acc);text-decoration:none}
+ #gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;z-index:10}
+ #gate h2{margin:0;font-size:18px} #gate .err{color:var(--bad);font-size:13px;min-height:18px}
+ #gate input{font-size:16px;padding:12px 16px;width:260px;text-align:center}
+</style></head><body>
+<div id="gate">
+  <h2>🔒 ч.12 — несостоявшиеся</h2>
+  <input id="pw" type="password" placeholder="пароль" autofocus>
+  <button id="unlock" onclick="unlock()">Открыть</button>
+  <div class="err" id="err"></div>
+</div>
+<div class="wrap" id="app" style="display:none">
+ <div class="top"><div>
+   <h1>ч.12 ст.93 — несостоявшиеся <span style="color:var(--good)">(0 заявок)</span></h1>
+   <div class="sub">потребность открыта, никто не подал — иди прорабатывай заказчика &nbsp;·&nbsp;
+     лидов: <b id="cnt">…</b> &nbsp;·&nbsp; обновлено на телефоне: <span id="ls">…</span></div>
+ </div><button id="rbtn" onclick="reload()">⟳ Обновить</button></div>
+ <div class="bar">
+   <input class="search" id="q" placeholder="поиск: предмет, заказчик, контакт…">
+   <select id="cat"><option value="">все категории</option></select>
+   <input id="pmin" type="number" placeholder="цена от, ₽" style="width:120px">
+   <label>размещ. с</label><input id="dfrom" type="date">
+   <label>по</label><input id="dto" type="date">
+ </div>
+ <table><thead><tr>
+   <th class="sortable" data-k="subject">Предмет</th>
+   <th class="sortable" data-k="price_rub">НМЦ&nbsp;▾</th>
+   <th class="sortable" data-k="customer">Заказчик</th>
+   <th class="sortable" data-k="contact">Контакт</th>
+   <th class="sortable" data-k="published">Размещено</th>
+   <th>Закупки</th>
+ </tr></thead><tbody id="rows"></tbody></table>
+ <div class="empty" id="empty" style="display:none">ничего не найдено</div>
+ <footer>Разработано в лаборатории <a href="https://t.me/tickettotender" target="_blank">Тендеры ex machina</a></footer>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let LEADS=[], PW='', sortK='price_rub', sortDir=-1;
+
+// расшифровка формата openssl: "Salted__"+salt(8)+ciphertext, PBKDF2-SHA256-200000, AES-256-CBC
+async function decrypt(b64, password){
+  const raw=Uint8Array.from(atob(b64.replace(/\s+/g,'')), c=>c.charCodeAt(0));
+  if(String.fromCharCode(...raw.slice(0,8))!=='Salted__') throw new Error('формат');
+  const salt=raw.slice(8,16), ct=raw.slice(16);
+  const bk=await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'}, bk, 384));
+  const key=await crypto.subtle.importKey('raw', bits.slice(0,32), {name:'AES-CBC'}, false, ['decrypt']);
+  const pt=await crypto.subtle.decrypt({name:'AES-CBC', iv:bits.slice(32,48)}, key, ct);
+  return new TextDecoder().decode(pt);
+}
+async function load(password){
+  const b64=await (await fetch('leads.enc?t='+Date.now())).text();
+  const json=await decrypt(b64, password);
+  const d=JSON.parse(json);
+  LEADS=d.leads||[]; $('ls').textContent=d.last_search||'—';
+  const cats=[...new Set(LEADS.map(l=>l.category).filter(Boolean))].sort();
+  $('cat').innerHTML='<option value="">все категории</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');
+  render();
+}
+async function unlock(){
+  const pw=$('pw').value; $('err').textContent=''; $('unlock').disabled=true;
+  try{ await load(pw); PW=pw; sessionStorage.setItem('ch12pw',pw);
+       $('gate').style.display='none'; $('app').style.display='block'; }
+  catch(e){ $('err').textContent='Неверный пароль'; $('unlock').disabled=false; }
+}
+async function reload(){
+  const b=$('rbtn'); b.disabled=true; b.textContent='⟳…';
+  try{ await load(PW);}catch(e){} b.disabled=false; b.textContent='⟳ Обновить';
+}
+function fmt(n){return (n||0).toLocaleString('ru-RU')+' ₽'}
+function esc(s){return (s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}
+function pubKey(p){const m=(p||'').match(/(\d{2})\.(\d{2})\.(\d{4})/);return m?m[3]+m[2]+m[1]:''}
+function render(){
+  let d=LEADS.slice();
+  const s=$('q').value.trim().toLowerCase(), c=$('cat').value, pm=+$('pmin').value||0;
+  const df=$('dfrom').value.replace(/-/g,''), dt=$('dto').value.replace(/-/g,'');
+  if(s)d=d.filter(l=>((l.subject||'')+' '+(l.customer||'')+' '+(l.contact||'')).toLowerCase().includes(s));
+  if(c)d=d.filter(l=>l.category===c);
+  if(pm)d=d.filter(l=>(l.price_rub||0)>=pm);
+  if(df)d=d.filter(l=>pubKey(l.published)>=df);
+  if(dt)d=d.filter(l=>pubKey(l.published)<=dt);
+  d.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string'){x=(x||'').toLowerCase();y=(y||'').toLowerCase()}return x<y?-sortDir:x>y?sortDir:0});
+  $('cnt').textContent=d.length;
+  $('rows').innerHTML=d.map(l=>{
+    const badge=l.count>1?`<span class="badge">×${l.count}</span><br>`:'';
+    const lh=(l.links||[]).map(k=>`<a class="go" href="${k.url}" target="_blank">${esc(k.published)||'в ЕИС'} ↗</a>`).join('<br>');
+    return `<tr><td class="subj">${esc(l.subject)||'—'}<div><span class="cat">${esc(l.category)||'—'}</span></div></td>
+      <td class="price">${fmt(l.price_rub)}</td><td class="cust">${esc(l.customer)}</td>
+      <td class="cust">${esc(l.contact)||'—'}</td><td class="cust">${esc(l.published)}</td>
+      <td>${badge}${lh}</td></tr>`;}).join('');
+  $('empty').style.display=d.length?'none':'block';
+}
+document.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>{const k=th.dataset.k;sortDir=(sortK===k)?-sortDir:(k==='price_rub'?-1:1);sortK=k;render()});
+['q','cat','pmin','dfrom','dto'].forEach(id=>$(id).addEventListener('input',render));
+$('pw').addEventListener('keydown',e=>{if(e.key==='Enter')unlock()});
+// автологин из сессии
+const saved=sessionStorage.getItem('ch12pw');
+if(saved){$('pw').value=saved;unlock();}
+</script></body></html>
